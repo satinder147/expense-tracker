@@ -20,6 +20,12 @@ Email receiving only works in a few regions, be carefull with that. The created 
 4. Now I gave permissions to AWS SES to write my emails to a s3 bucket. 
 5. A lambda function is invoked on inserts into this bucket. This lambda function updates google keeps with all the transactions I made in the past 1 month. 
 
+
+### How to create the lambda function?
+1. python3.8 -m venv expense-tracker
+2. source expense-tracker/bin/activate
+3. 
+
 ## What did I acheive
 1. I get to see a pretty list of the transactions
 2. I learnt a lot!!!!!

@@ -3,79 +3,142 @@ import re
 import email
 import imaplib
 from datetime import  datetime
+from abc import ABC, abstractmethod
 
 import gkeepapi
 import pandas as pd
 
-credit_card_payment_string_re = re.compile(r'Thank you for using your HDFC Bank Credit Card ending [^\<]*')
-debit_Card_payment_string_re = re.compile(r'Rs.*Your UPI transaction reference number is')
-axis_credit_card_string_re = re.compile(r'Thank you for using your Card no. XX9244 for [\s\S]*credit')
 
-def search_note_in_keeps(keep_object, title):
-    gnotes = keep_object.find(func=lambda x: x.title == title)
-    try:
-        note = next(gnotes)
-        return note
-    except StopIteration:
-        return None
+class CardMailFormatter(ABC):
 
+    @staticmethod
+    @abstractmethod
+    def extract_vendor(mail):
+        pass
 
-def format_text_in_required_format(data_df):
-    text = """"""
-    data_df['date'] = data_df['time'].apply(lambda x: str(x.date()))
-    data_df['vendor'] = data_df['vendor'].apply(lambda x: x.lower())
-    data_df['vendor_length'] = data_df['vendor'].apply(lambda x: len(x))
-    for group_name, group in data_df.groupby('date'):
-        text += '- ' + group_name + '\n'
-        for idx, (_, row) in enumerate(group.iterrows()):
-            text += "    {0} RS {2:^5},  {1:>5}({3})".format('*', row['vendor'], str(int(row['cost'])).rjust(5, ' '), row['card_no']) + '\n'
-        text+='\n'
-    total_per_card = data_df.groupby('card_no')['cost'].sum().to_dict()
-    for card_no, total in total_per_card.items():
-        text+= 'card - {},  total - {}\n'.format(str(card_no), str(total))
-    text +='total {} \n'.format(data_df['cost'].sum())
-    return text
+    @staticmethod
+    @abstractmethod
+    def extract_cost(mail):
+        pass
 
-def add_payment_info_to_google_keeps(keep_object, text, note_title):
-    already_existing_note = search_note_in_keeps(keep_object, note_title)
-    if already_existing_note:
-        print("already existing")
-        already_existing_note.delete()
-    gnote = keep_object.createNote(note_title, text)
-    gnote.pinned = True
-    keep_object.sync()
+    @staticmethod
+    @abstractmethod
+    def extract_card_number(mail):
+        pass
 
-def format_debit_card_payments(message):
-    for i in debit_Card_payment_string_re.finditer(message):
-        x, y = i.span()
-        message = message[x:y].strip()
-        tokens = message.split(' ')
-        amount = float('.'.join(tokens[0].split('.')[1:]))
-        vendor = tokens[9]
-        date_str = tokens[11]
-        card_no = tokens[6]
-        card_no, amount, vendor, date_str = \
-            card_no.split('*')[-1], amount, vendor.split('@')[0][:15], datetime.strptime(date_str.split('.')[0], '%d-%m-%y')
-        print(card_no, amount, vendor, date_str)
-        return card_no, amount, vendor, date_str
-    return None, None, None, None
+    @staticmethod
+    @abstractmethod
+    def extract_time(mail):
+        pass
 
+    def extract_information_from_mail(self, mail):
+        """
+        This function extracts transaction cost, transaction time, transaction vendor and transaction card
+        number from the mail
+        :param mail:
+        :return: dict
+        """
+        return {
+            'cost': self.extract_cost(mail), 'vendor': self.extract_vendor(mail),
+            'card_no': self.extract_card_number(mail), 'time': self.extract_time(mail)
+        }
 
-def format_credit_card_payments(email_body):
-    for i in credit_card_payment_string_re.finditer(email_body):
-        x, y = i.span()
-        message = email_body[x:y].strip()
-        tokens = message.split(' ')
-        card_no, cost = tokens[10], tokens[13]
-        vendor = ""
-        p = 15
-        while tokens[p]!='on':
-            vendor += tokens[p]
-            break
-        date_str = tokens[-2] + ' ' + tokens[-1][:-1]
-        print(card_no, cost, vendor, date_str, sep=' ')
-        return int(card_no), float(cost), vendor, datetime.strptime(date_str, '%d-%m-%Y %H:%M:%S')
-    return None, None, None, None
+class Axis9244(CardMailFormatter):
+    @staticmethod
+    def extract_vendor(mail):
+        return re.search(r'at\s+(.*?)\s+on', mail).group(1)
+    @staticmethod
+    def extract_cost(mail):
+        return float(re.search(r'INR\s+(\d+(\.\d+)?)', mail).group(1))
+
+    @staticmethod
+    def extract_time(mail):
+        date_str = re.search(r'on (\d{2}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', mail).group(1)
+        return datetime.strptime(date_str, '%d-%m-%y %H:%M:%S')
+
+    @staticmethod
+    def extract_card_number(mail):
+        return int(re.search(r'Card no\. (\w{2}\d{4})', mail).group(1).split('X')[-1])
+
+class HdfcUpi(CardMailFormatter):
+    @staticmethod
+    def extract_vendor(mail):
+        return re.search(r'VPA\s+(\S+)', mail).group(1)
+
+    @staticmethod
+    def extract_cost(mail):
+        return float(re.search(r'Rs\.([\d.]+)\shas been debited', mail).group(1))
+
+    @staticmethod
+    def extract_time(mail):
+        date_str = re.search(r'(\d{2}-\d{2}-\d{2})', mail).group(1)
+        return datetime.strptime(date_str, '%d-%m-%y')
+
+    @staticmethod
+    def extract_card_number(mail):
+        return re.search(r'\*\*(\d+)', mail).group(1)
+
+class Hdfc0578(CardMailFormatter):
+    @staticmethod
+    def extract_vendor(mail):
+        return re.search(r'at (\w+\s?\w+) on', mail).group(1)
+
+    @staticmethod
+    def extract_cost(mail):
+        return float(re.search(r'Rs ([\d\.]+) at', mail).group(1))
+
+    @staticmethod
+    def extract_time(mail):
+        date_str = re.search(r'on (\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2})', mail).group(1)
+        return datetime.strptime(date_str, '%d-%m-%y %H:%M:%S')
+
+    @staticmethod
+    def extract_card_number(mail):
+        return re.search(r'ending\s+(\d{4})', mail).group(1)
+    
+
+class GoogleKeepUtils:
+
+    def __init__(self, username, app_password):
+        self.keeps_object = gkeepapi.Keep()
+        self.keeps_object.login(username, app_password)
+    def search_note_in_keeps(self, title):
+        notes = self.keeps_object.find(func=lambda x: x.title == title)
+        try:
+            note = next(notes)
+            return note
+        except StopIteration:
+            return None
+
+    def add_transactions_to_google_keeps(self, note_title, transactions):
+        already_existing_note = self.search_note_in_keeps(note_title)
+        if already_existing_note:
+            print("Note already existing, Deleting...")
+            already_existing_note.delete()
+        gnote = self.keeps_object.createNote(note_title, transactions)
+        gnote.pinned = True
+        self.keeps_object.sync()
+
+    @staticmethod
+    def prepare_message_for_google_keeps(data_df):
+        text = """"""
+        data_df['date'] = data_df['time'].apply(lambda x: str(x.date()))
+        data_df['vendor'] = data_df['vendor'].apply(lambda x: x.lower())
+        data_df['vendor_length'] = data_df['vendor'].apply(lambda x: len(x))
+        for group_name, group in data_df.groupby('date'):
+            text += '- ' + group_name + '\n'
+            for idx, (_, row) in enumerate(group.iterrows()):
+                text += "    {0} RS {2:^5},  {1:>5}({3})".format('*', row['vendor'], str(int(row['cost'])).rjust(5, ' '), row['card_no']) + '\n'
+            text+='\n'
+        total_per_card = data_df.groupby('card_no')['cost'].sum().to_dict()
+        for card_no, total in total_per_card.items():
+            text+= 'card - {},  total - {}\n'.format(str(card_no), str(total))
+        text +='total {} \n'.format(data_df['cost'].sum())
+        return text
+
+    def register(self, data_df, current_month):
+        transactions = self.prepare_message_for_google_keeps(data_df)
+        self.add_transactions_to_google_keeps(transactions, current_month)
 
 def get_month_start():
     date = datetime.today().replace(day=1).date()
@@ -85,49 +148,27 @@ def get_month_start():
 
 def get_card_payments(mail, search_string, format_funtion):
     _, selected_mails = mail.search(None, None, search_string)
-    print("Total messages" , len(selected_mails[0].split()))
     mapping = {'card_no': [], 'cost': [], 'vendor': [], 'time': []}
     
     for num in selected_mails[0].split():
-        _, data = mail.fetch(num , '(RFC822)')
-        _, bytes_data = data[0]
-
+        bytes_data = mail.fetch(num , '(RFC822)')[1][0][1]
         email_message = email.message_from_bytes(bytes_data)
-
         for part in email_message.walk():
             if part.get_content_type()=="text/plain" or part.get_content_type()=="text/html":
                 message = part.get_payload(decode=True)
-                message = message.decode()
-                card_no, cost, vendor, date = format_funtion(message)
-                mapping['card_no'].append(card_no)
-                mapping['cost'].append(cost)
-                mapping['vendor'].append(vendor)
-                mapping['time'].append(date)
+                message = message.decode('ISO 8859-1')
+                try:
+                    response = format_funtion(message)
+                    for col in ['cost', 'card_no', 'vendor', 'time']:
+                        mapping[col].append(response[col])
+                except Exception as e:
+                    pass
                 break
     return mapping
 
-def format_axis_bank_credit_card_payments(message):
-    for i in axis_credit_card_string_re.finditer(message):
-        x, y = i.span()
-        message = message[x:y].strip()
-        message = message.replace('\n', ' ')    
-        message = message.replace('\r', '')    
-        tokens = message.split(' ')
-        
-        card_no, cost = tokens[7], tokens[10]
-        vendor = []
-        p = 12
 
-        while tokens[p]!='on':
-           vendor.append(tokens[p])
-           p=p+1
-        vendor = ' '.join(vendor)
-        date_str = tokens[-5] + ' ' + tokens[-4][:-1]
-        print(card_no, cost, vendor, date_str, sep=' ')
-        return card_no, float(cost), vendor, datetime.strptime(date_str, '%d-%m-%y %H:%M:%S')
-    return None, None, None, None
 
-def lambda_handler(*args):
+def lambda_handler():
     username = os.getenv('username')
     app_password = os.getenv('app_password')
     start_date = get_month_start()
@@ -136,24 +177,21 @@ def lambda_handler(*args):
     mail = imaplib.IMAP4_SSL(gmail_host)
     mail.login(username, app_password)
     mail.select("INBOX")
-    search_string_credit_card = '((SENTSINCE "{}") (HEADER Subject "Alert : Update on your HDFC Bank Credit Card"))'.format(start_date)
-    mapping1 = get_card_payments(mail, search_string_credit_card, format_credit_card_payments)
-    search_string_debit_card = '((SENTSINCE "{}") (HEADER Subject "View: Account update for your HDFC Bank A/c"))'.format(start_date)
-    mapping2 = get_card_payments(mail, search_string_debit_card, format_debit_card_payments)
-    search_string_axis_bank_credit_card = '((SENTSINCE "{}") (HEADER Subject "Transaction alert on Axis Bank Credit Card no. XX9244"))'.format(start_date)
-    mapping3 = get_card_payments(mail, search_string_axis_bank_credit_card, format_axis_bank_credit_card_payments)
-    df = pd.concat([pd.DataFrame(mapping1), pd.DataFrame(mapping2), pd.DataFrame(mapping3)]).reset_index(drop=True)
+    email_search_strings_and_functions = [
+        ('((SENTSINCE "{}") (HEADER Subject "Alert : Update on your HDFC Bank Credit Card"))'.format(start_date),
+          Hdfc0578().extract_information_from_mail),
+         ('((SENTSINCE "{}") (HEADER Subject "View: Account update for your HDFC Bank A/c"))'.format(start_date),
+          HdfcUpi().extract_information_from_mail),
+        ('((SENTSINCE "{}") (HEADER Subject "Transaction alert on Axis Bank Credit Card no. XX9244"))'.format(start_date),
+         Axis9244().extract_information_from_mail)
+    ]
+    transactions = []
+    for email_search_string, info_extractor_func in email_search_strings_and_functions:
+        transactions.append(get_card_payments(mail, email_search_string, info_extractor_func))
+    df = pd.concat(list(map(pd.DataFrame, transactions))).reset_index(drop=True)
     df = df[~df['card_no'].isna()].reset_index(drop=True)
-    text = format_text_in_required_format(df)
-    keep_object = gkeepapi.Keep()
-    keep_object.login(username, app_password)
-    
-    add_payment_info_to_google_keeps(keep_object, text, current_month)
+    google_keep_utils = GoogleKeepUtils(username, app_password)
+    google_keep_utils.register(df, current_month)
 
 
-"""
-TODO
-fetch emails only after the latest date
-how to do this automatically after every email. 
-"""
 lambda_handler()
