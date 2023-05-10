@@ -36,4 +36,5 @@ Email receiving only works in a few regions, be carefull with that. The created 
 2. Deploying this is a **PAIN**. This one probably can be solved with `terraform` or `aws cloud formation`. 
 3. For new cards, I need to add a new forward rule to my gmail account and update my lambda function. The latter can be solved with a configuration file. Something even better will be to train a ml model to automatically extract amount spent, vendor, date of transaction, card number from the email. 
 
-## Any ideas to improve the solution 
+### A question to ask yourself at this point is, is this code worth a star?
+### Any ideas to improve the solution are highly welcomed.
