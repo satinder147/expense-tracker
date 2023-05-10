@@ -138,7 +138,7 @@ class GoogleKeepUtils:
 
     def register(self, data_df, current_month):
         transactions = self.prepare_message_for_google_keeps(data_df)
-        self.add_transactions_to_google_keeps(transactions, current_month)
+        self.add_transactions_to_google_keeps(current_month, transactions)
 
 def get_month_start():
     date = datetime.today().replace(day=1).date()
@@ -168,7 +168,7 @@ def get_card_payments(mail, search_string, format_funtion):
 
 
 
-def lambda_handler():
+def lambda_handler(*args):
     username = os.getenv('username')
     app_password = os.getenv('app_password')
     start_date = get_month_start()
@@ -190,8 +190,10 @@ def lambda_handler():
         transactions.append(get_card_payments(mail, email_search_string, info_extractor_func))
     df = pd.concat(list(map(pd.DataFrame, transactions))).reset_index(drop=True)
     df = df[~df['card_no'].isna()].reset_index(drop=True)
+    # email for a transaction in last month was received this month
+    df = df[df['time'] >= datetime.strptime(start_date, '%d-%b-%Y')]
     google_keep_utils = GoogleKeepUtils(username, app_password)
     google_keep_utils.register(df, current_month)
 
-
-lambda_handler()
+if __name__ == "__main__":
+    lambda_handler()

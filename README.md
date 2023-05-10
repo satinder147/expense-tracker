@@ -21,10 +21,11 @@ Email receiving only works in a few regions, be carefull with that. The created 
 5. A lambda function is invoked on inserts into this bucket. This lambda function updates google keeps with all the transactions I made in the past 1 month. 
 
 
-### How to create the lambda function?
-1. python3.8 -m venv expense-tracker
-2. source expense-tracker/bin/activate
-3. 
+### How to setup the lambda function?
+1. Create a deployment-package.zip with the required dependencies by following these [instructions](https://docs.aws.amazon.com/lambda/latest/dg/python-package.html) or just add your lambda function to the already existing deployment-package.zip in this repo using `zip -g deployment-package.zip lambda_function.py`
+2. Upload the deployment package in aws lambda.
+3. In the configuration tab, add the environment variables(username and app_password)
+4. Add a trigger to trigger the lambda function on S3 putobjects.
 
 ## What did I acheive
 1. I get to see a pretty list of the transactions
@@ -32,7 +33,7 @@ Email receiving only works in a few regions, be carefull with that. The created 
 
 ## Problems
 1. I can't provide this facility to anyone else, in a way I need their email access. 
-2. Deploying this is a **PAIN** in the ass. This one probably can be solved with `terraform` or `aws cloud formation`. 
+2. Deploying this is a **PAIN**. This one probably can be solved with `terraform` or `aws cloud formation`. 
 3. For new cards, I need to add a new forward rule to my gmail account and update my lambda function. The latter can be solved with a configuration file. Something even better will be to train a ml model to automatically extract amount spent, vendor, date of transaction, card number from the email. 
 
 ## Any ideas to improve the solution 
