@@ -42,7 +42,7 @@ def get_transactions(email_folder):
     return df
 
 def lambda_handler(*args):
-    email_folder = 'emails'
+    email_folder = '/tmp/emails'
     s3_bucket = 'satinder-bank-emails'
     username = os.getenv('username')
     app_password = os.getenv('app_password')
