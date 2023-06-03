@@ -41,6 +41,19 @@ def get_transactions(email_folder):
     df = pd.DataFrame(mapping).reset_index(drop=True)
     return df
 
+
+def filter_transactions(transaction_df, start_time):
+    transaction_df = transaction_df[~transaction_df['card_no'].isna()]
+    # email for a transaction in last month was received this month
+    transaction_df = transaction_df[transaction_df['time'] >= start_time]
+    # remove transaction made to a self account, vendor is 8698602278....
+    transaction_df = transaction_df[transaction_df['vendor'].apply(lambda x: x.find('8698602278')==-1)]
+    # shorten transaction vendor name, last 20 characters are enough (otherwise some transactions are shown in multiple
+    # lines which makes is less readable
+    transaction_df['vendor'] = transaction_df['vendor'].apply(lambda x: x[-20:])
+    transaction_df = transaction_df.reset_index(drop=True)
+    return transaction_df
+
 def lambda_handler(*args):
     email_folder = '/tmp/emails'
     s3_bucket = 'satinder-bank-emails'
@@ -49,13 +62,11 @@ def lambda_handler(*args):
     start_time = datetime.today().replace(day=1)
     current_month = str(datetime.strftime(start_time, '%B-%Y'))
     BotoUtils(s3_bucket, email_folder).get_emails(start_time)
-    df = get_transactions(email_folder)
-    df = df[~df['card_no'].isna()].reset_index(drop=True)
-    # email for a transaction in last month was received this month
-    df = df[df['time'] >= start_time]
-    print(df.sort_values(by='time'))
+    transaction_df = get_transactions(email_folder)
+
+    transaction_df = filter_transactions(transaction_df, start_time)
     google_keep_utils = GoogleKeepUtils(username, app_password)
-    google_keep_utils.register(df, current_month)
+    google_keep_utils.register(transaction_df, current_month)
 
 if __name__ == "__main__":
     lambda_handler()
