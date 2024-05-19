@@ -5,8 +5,7 @@ Already available ways to keep track of the all the transactions.
 2. Manually go to each bank's website and see the transactions: Even more effort but reliable. 
 3. Apps like CRED: Need email read access, are you kidding me?
 
-Here comes my not very elegant solution that takes in the least amount of effort, if we don't add up the effort that went in to create this project and decorating this README.
-
+Here comes my not very elegant solution that takes in the least amount of effort (only if we don't add up the effort that went in to create this project and decorating this README)
 ## Architecture
 ![Alt text](expense-tracker.png?raw=true "Architecture")
 
